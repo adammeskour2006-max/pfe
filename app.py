@@ -67,7 +67,7 @@ def main():
         
         st.markdown("---")
         st.caption("Mode : Maintenance Prédictive v1.2")
-        st.caption("Département : Ingénierie Mécanique & Fiabilité")
+        st.caption("Département : Ingénierie Mécanique & Production")
 
     # --- ZONE PRINCIPALE DE DIAGNOSTIC ---
     if fichier_modele and fichier_audio:
