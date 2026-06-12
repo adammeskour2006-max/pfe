@@ -1,85 +1,146 @@
 import streamlit as st
 import librosa
+import librosa.display
 import numpy as np
 import joblib
+import matplotlib.pyplot as plt
 
-# --- CONFIGURATION DE LA PAGE ---
-st.set_page_config(page_title="Diagnostic Acoustique Moteur", page_icon="⚙️", layout="centered")
+# ==========================================
+# 1. CONFIGURATION DE L'APPLICATION
+# ==========================================
+st.set_page_config(
+    page_title="DiagMoteur Pro | Maintenance Predictive",
+    page_icon="⚙️",
+    layout="wide", # Passage en mode large pour les tableaux de bord professionnels
+    initial_sidebar_state="expanded"
+)
 
-st.title("⚙️ Outil de Maintenance Prédictive Acoustique")
-st.markdown("""
-Cet outil analyse la signature acoustique d'un moteur pour détecter d'éventuelles anomalies mécaniques.
-""")
+# ==========================================
+# 2. FONCTIONS MÉTIER (BACKEND LOGIC)
+# ==========================================
+@st.cache_resource(show_spinner=False)
+def charger_modele(chemin_fichier):
+    """Charge le modèle ML en cache pour optimiser les performances."""
+    return joblib.load(chemin_fichier)
 
-# --- FONCTION D'EXTRACTION (Cachée en arrière-plan) ---
-@st.cache_data
-def extraire_mfcc(chemin_audio):
-    # Chargement du fichier audio uploadé
+@st.cache_data(show_spinner=False)
+def extraire_mfcc_et_signal(chemin_audio):
+    """Extrait la signature MFCC et retourne aussi le signal pour la visualisation."""
     y, sr = librosa.load(chemin_audio, sr=22050)
     
-    # Prétraitement : Coupe les silences, accentue les aigus, normalise
     y_trim, _ = librosa.effects.trim(y)
     y_preemph = librosa.effects.preemphasis(y_trim)
     y_norm = librosa.util.normalize(y_preemph)
     
-    # Extraction MFCC (13 coefficients)
     mfccs = librosa.feature.mfcc(y=y_norm, sr=sr, n_mfcc=13)
     signature = np.mean(mfccs.T, axis=0)
     
-    return signature
+    return signature, y_norm, sr
 
-# --- INTERFACE UTILISATEUR ---
-st.subheader("1. Importation du Modèle IA")
-fichier_modele = st.file_uploader("Uploadez le fichier du modèle (.joblib)", type=["joblib"])
+def tracer_waveform(y, sr):
+    """Génère un graphique professionnel du signal audio."""
+    fig, ax = plt.subplots(figsize=(10, 2))
+    librosa.display.waveshow(y, sr=sr, ax=ax, color="#1f77b4", alpha=0.8)
+    ax.set_title("Empreinte Acoustique du Moteur", fontsize=10, loc='left', color='#555555')
+    ax.set_xlabel("Temps (s)")
+    ax.set_ylabel("Amplitude")
+    ax.axis('off') # Style épuré sans bordures lourdes
+    plt.tight_layout()
+    return fig
 
-st.subheader("2. Analyse de l'Enregistrement")
-fichier_audio = st.file_uploader("Uploadez l'enregistrement du moteur (.wav)", type=["wav"])
+# ==========================================
+# 3. INTERFACE UTILISATEUR (FRONTEND)
+# ==========================================
+def main():
+    # --- EN-TÊTE PRINCIPAL ---
+    st.title("⚙️ Centre de Diagnostic Acoustique")
+    st.markdown("Système d'analyse par **Isolation Forest** pour la détection non-invasive d'anomalies mécaniques.")
+    st.divider()
 
-# --- LOGIQUE DE DIAGNOSTIC ---
-if fichier_modele is not None and fichier_audio is not None:
-    
-    # Bouton d'action
-    if st.button("Lancer le Diagnostic Acoustique", type="primary"):
-        with st.spinner("Analyse des harmoniques en cours..."):
+    # --- BARRE LATÉRALE (PARAMÈTRES & UPLOADS) ---
+    with st.sidebar:
+        st.header("🛠️ Configuration")
+        st.markdown("Veuillez charger les fichiers requis pour lancer l'analyse.")
+        
+        fichier_modele = st.file_uploader("1. Modèle d'IA (.joblib)", type=["joblib"], help="Chargez le cerveau pré-entraîné.")
+        fichier_audio = st.file_uploader("2. Enregistrement Moteur (.wav)", type=["wav"], help="Chargez l'échantillon capturé sur le terrain.")
+        
+        st.markdown("---")
+        st.caption("Mode : Maintenance Prédictive v1.2")
+        st.caption("Département : Ingénierie Mécanique & Fiabilité")
+
+    # --- ZONE PRINCIPALE DE DIAGNOSTIC ---
+    if fichier_modele and fichier_audio:
+        st.info("Fichiers chargés avec succès. Prêt pour l'analyse.", icon="✅")
+        
+        # Bouton d'action principal bien en évidence
+        if st.button("🚀 Lancer le Diagnostic Mécanique", use_container_width=True, type="primary"):
             
-            try:
-                # 1. Chargement du modèle
-                modele = joblib.load(fichier_modele)
-                
-                # 2. Traitement du son
-                # Streamlit traite les fichiers uploadés comme des objets en mémoire, 
-                # librosa peut les lire directement.
-                signature = extraire_mfcc(fichier_audio)
-                signature_reshape = signature.reshape(1, -1)
-                
-                # 3. Prédiction et calcul du score
-                prediction = modele.predict(signature_reshape)
-                score = modele.decision_function(signature_reshape)[0]
-                
-                # 4. Affichage des résultats
-                st.markdown("---")
-                st.subheader("Résultat du Diagnostic")
-                
-                # Mise en page en colonnes
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.metric(label="Score d'Anomalie", value=f"{score:.3f}")
-                    st.caption("Un score négatif indique une déviation de la norme.")
-                
-                with col2:
-                    if prediction[0] == 1:
-                        st.success("🟢 STATUT : MOTEUR SAIN")
-                        st.write("La signature acoustique correspond à la norme statistique apprise.")
-                    else:
-                        st.error("🔴 STATUT : ANOMALIE DÉTECTÉE")
-                        st.write("Une déviation anormale a été repérée (possible défaut d'injection, jeu de soupape, etc.).")
+            with st.spinner("Analyse spectrale et inférence IA en cours..."):
+                try:
+                    # Traitement backend
+                    modele = charger_modele(fichier_modele)
+                    signature, y_norm, sr = extraire_mfcc_et_signal(fichier_audio)
+                    signature_reshape = signature.reshape(1, -1)
+                    
+                    prediction = modele.predict(signature_reshape)
+                    score = modele.decision_function(signature_reshape)[0]
+                    
+                    # --- AFFICHAGE DES RÉSULTATS (TABS) ---
+                    tab1, tab2 = st.tabs(["📊 Tableau de Bord Principal", "🔬 Détails Techniques"])
+                    
+                    # ONGLET 1 : Vue pour le technicien (Décision rapide)
+                    with tab1:
+                        st.subheader("Statut du Diagnostic")
                         
-                # Optionnel : Afficher un lecteur audio pour réécouter le fichier sur le tableau de bord
-                st.audio(fichier_audio, format='audio/wav')
-                
-            except Exception as e:
-                st.error(f"Une erreur s'est produite lors de l'analyse : {e}")
+                        col1, col2, col3 = st.columns([1, 2, 1])
+                        
+                        with col1:
+                            st.metric(label="Score d'Anomalie (IF)", value=f"{score:.4f}", delta="Tolérance: 0.00" if score > 0 else "Alerte Franche", delta_color="normal" if score > 0 else "inverse")
+                            
+                        with col2:
+                            if prediction[0] == 1:
+                                st.success("### 🟢 MOTEUR SAIN\nLa signature acoustique est conforme aux tolérances constructeur.")
+                            else:
+                                st.error("### 🔴 ANOMALIE DÉTECTÉE\nDéviation acoustique majeure identifiée. Inspection mécanique requise.")
+                                
+                        with col3:
+                            st.audio(fichier_audio, format='audio/wav')
+                            st.caption("Réécouter l'échantillon")
+                            
+                        st.markdown("---")
+                        # Affichage du graphique généré
+                        fig = tracer_waveform(y_norm, sr)
+                        st.pyplot(fig)
 
-else:
-    st.info("Veuillez uploader le modèle et un fichier audio pour commencer.")
+                    # ONGLET 2 : Vue pour l'ingénieur (Data Brute)
+                    with tab2:
+                        st.subheader("Vecteur MFCC (13 Coefficients)")
+                        st.markdown("Valeurs extraites pour l'inférence de l'algorithme :")
+                        # Affichage élégant des données brutes
+                        st.dataframe(np.round(signature.reshape(1, 13), 4), use_container_width=True)
+                        
+                        with st.expander("Voir l'explication du fonctionnement"):
+                            st.write("""
+                            L'algorithme **Isolation Forest** a analysé le vecteur de coefficients mel-fréquentiels (MFCC) ci-dessus. 
+                            Un score d'anomalie positif indique que la donnée se situe au cœur de la distribution des moteurs sains (profil normal). 
+                            Un score négatif indique une observation rare ou aberrante (profil en panne ou bruité).
+                            """)
+
+                except Exception as e:
+                    st.error(f"Une erreur technique est survenue lors de l'exécution : {e}")
+                    st.stop()
+    else:
+        # Écran d'accueil quand rien n'est chargé
+        st.warning("👈 En attente des données. Veuillez charger le modèle et un fichier audio via le panneau latéral.")
+        
+        # Placeholder visuel professionnel
+        col1, col2 = st.columns(2)
+        with col1:
+            st.info("**Étape 1 :** Chargez votre modèle entraîné `.joblib`.")
+        with col2:
+            st.info("**Étape 2 :** Chargez le fichier `.wav` capturé sur le terrain.")
+
+# Point d'entrée standard en Python
+if __name__ == "__main__":
+    main()
